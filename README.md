@@ -70,6 +70,25 @@ make build-linux-amd64-container
 
 The Linux container build helper auto-detects `docker`, `podman`, or Apple `container`.
 
+## Release Builds
+
+GitHub Actions only builds release artifacts when you push a version tag.
+
+Example:
+
+```bash
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+That tag-triggered workflow runs tests, builds:
+
+- `darwin/arm64`
+- `linux/amd64`
+- `linux/arm64`
+
+and uploads packaged artifacts to the corresponding GitHub Release.
+
 ## Install
 
 Example install layout:

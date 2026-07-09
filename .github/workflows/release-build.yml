@@ -1,0 +1,120 @@
+name: release-build
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run tests
+        run: make test
+
+  build:
+    needs: test
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            extension: so
+            artifact_suffix: linux-amd64
+            packages: ""
+            cc: gcc
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            extension: so
+            artifact_suffix: linux-arm64
+            packages: "gcc-aarch64-linux-gnu libc6-dev-arm64-cross"
+            cc: aarch64-linux-gnu-gcc
+          - runner: macos-14
+            goos: darwin
+            goarch: arm64
+            extension: dylib
+            artifact_suffix: darwin-arm64
+            packages: ""
+            cc: ""
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install cross-compilation toolchain
+        if: matrix.packages != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.packages }}
+
+      - name: Build shared library
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CC: ${{ matrix.cc }}
+        run: |
+          set -eu
+          out_dir="release/plugins/${GOOS}/${GOARCH}"
+          mkdir -p "${out_dir}"
+          if [ -n "${CC}" ]; then
+            export CC
+          fi
+          export CGO_ENABLED=1
+          go build -buildmode=c-shared -o "${out_dir}/codexcont.${{ matrix.extension }}" .
+          rm -f "${out_dir}/codexcont.h"
+
+      - name: Package release asset
+        env:
+          TAG: ${{ github.ref_name }}
+          SUFFIX: ${{ matrix.artifact_suffix }}
+        run: |
+          set -eu
+          archive="codexcont-${TAG}-${SUFFIX}.tar.gz"
+          tar -czf "${archive}" -C release plugins
+          shasum -a 256 "${archive}" > "${archive}.sha256"
+
+      - name: Upload packaged asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_suffix }}
+          path: |
+            codexcont-${{ github.ref_name }}-${{ matrix.artifact_suffix }}.tar.gz
+            codexcont-${{ github.ref_name }}-${{ matrix.artifact_suffix }}.tar.gz.sha256
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download packaged assets
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          pattern: "*"
+          merge-multiple: true
+
+      - name: Publish GitHub release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: release-assets/*
