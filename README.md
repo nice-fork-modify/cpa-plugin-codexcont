@@ -2,6 +2,8 @@
 
 `cpa-plugin-codexcont` is a CLIProxyAPI standard dynamic library plugin that ports the core folded-reasoning behavior of `neteroster/CodexCont` into the official plugin ABI.
 
+Special thanks to [neteroster/CodexCont](https://github.com/neteroster/CodexCont) for the original folded-reasoning idea, heuristic, and behavior reference that this plugin adapts to CLIProxyAPI's official plugin ABI.
+
 It is intentionally narrow:
 
 - it only executes through the official executor path
@@ -77,8 +79,8 @@ GitHub Actions only builds release artifacts when you push a version tag.
 Example:
 
 ```bash
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.1.2
+git push origin v0.1.2
 ```
 
 That tag-triggered workflow runs tests, builds:
@@ -87,7 +89,12 @@ That tag-triggered workflow runs tests, builds:
 - `linux/amd64`
 - `linux/arm64`
 
-and uploads packaged artifacts to the corresponding GitHub Release.
+and uploads plugin-store-compatible release assets to the corresponding GitHub Release:
+
+- `codexcont_<version>_darwin_arm64.zip`
+- `codexcont_<version>_linux_amd64.zip`
+- `codexcont_<version>_linux_arm64.zip`
+- `checksums.txt`
 
 ## Install
 
@@ -135,4 +142,3 @@ plugins:
 
 - `exit_protocol` intentionally supports only `responses`; invalid values fall back to `responses`.
 - Linux cross-builds for `-buildmode=c-shared` are easiest through a Linux container, which is why the helper script exists.
-- If you publish this plugin from your own repository, update the metadata URL in `config.go`.

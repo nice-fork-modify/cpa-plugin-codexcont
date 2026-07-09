@@ -11,9 +11,9 @@ import (
 
 const (
 	pluginIdentifier = "codexcont"
-	pluginVersion    = "0.1.1"
-	pluginAuthor     = "OpenAI Codex"
-	pluginRepo       = "https://github.com/neteroster/CodexCont"
+	pluginVersion    = "0.1.2"
+	pluginAuthor     = "cwzsquare"
+	pluginRepo       = "https://github.com/cwzsquare/cpa-plugin-codexcont"
 	defaultStep      = 518
 )
 

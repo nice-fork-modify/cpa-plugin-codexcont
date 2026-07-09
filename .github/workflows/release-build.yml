@@ -83,23 +83,29 @@ jobs:
           go build -buildmode=c-shared -o "${out_dir}/codexcont.${{ matrix.extension }}" .
           rm -f "${out_dir}/codexcont.h"
 
-      - name: Package release asset
+      - name: Package plugin store asset
         env:
           TAG: ${{ github.ref_name }}
-          SUFFIX: ${{ matrix.artifact_suffix }}
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
         run: |
           set -eu
-          archive="codexcont-${TAG}-${SUFFIX}.tar.gz"
-          tar -czf "${archive}" -C release plugins
-          shasum -a 256 "${archive}" > "${archive}.sha256"
+          version="${TAG#v}"
+          asset_dir="asset"
+          mkdir -p "${asset_dir}"
+          archive="codexcont_${version}_${GOOS}_${GOARCH}.zip"
+          plugin_path="release/plugins/${GOOS}/${GOARCH}"
+          (
+            cd "${plugin_path}"
+            zip -q "${GITHUB_WORKSPACE}/${asset_dir}/${archive}" "codexcont.${{ matrix.extension }}"
+          )
 
       - name: Upload packaged asset
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_suffix }}
           path: |
-            codexcont-${{ github.ref_name }}-${{ matrix.artifact_suffix }}.tar.gz
-            codexcont-${{ github.ref_name }}-${{ matrix.artifact_suffix }}.tar.gz.sha256
+            asset/*.zip
           if-no-files-found: error
 
   publish:
@@ -112,6 +118,12 @@ jobs:
           path: release-assets
           pattern: "*"
           merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          set -eu
+          cd release-assets
+          sha256sum ./*.zip > checksums.txt
 
       - name: Publish GitHub release assets
         uses: softprops/action-gh-release@v2

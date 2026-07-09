@@ -31,6 +31,7 @@ fi
 root_dir=$(
   CDPATH= cd -- "$(dirname "$0")/.." && pwd
 )
+artifact_relpath="dist/linux/$arch/codexcont.so"
 out_dir="$root_dir/dist/linux/$arch"
 mkdir -p "$out_dir"
 
@@ -60,4 +61,4 @@ case "$runtime" in
     ;;
 esac
 
-echo "built $out_dir/codexcont.so"
+echo "built $artifact_relpath"
