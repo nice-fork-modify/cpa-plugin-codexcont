@@ -11,7 +11,7 @@ import (
 
 const (
 	pluginIdentifier = "codexcont"
-	pluginVersion    = "0.1.0"
+	pluginVersion    = "0.1.1"
 	pluginAuthor     = "OpenAI Codex"
 	pluginRepo       = "https://github.com/neteroster/CodexCont"
 	defaultStep      = 518
