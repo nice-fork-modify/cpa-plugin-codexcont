@@ -123,7 +123,7 @@ jobs:
         run: |
           set -eu
           cd release-assets
-          sha256sum ./*.zip > checksums.txt
+          sha256sum *.zip > checksums.txt
 
       - name: Publish GitHub release assets
         uses: softprops/action-gh-release@v2
