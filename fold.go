@@ -47,7 +47,7 @@ type roundState struct {
 	sawTerminal  bool
 }
 
-func runFoldedExecution(ctx context.Context, req pluginapi.ExecutorRequest, hostCallbackID, pluginStreamID string) error {
+func runFoldedExecution(ctx context.Context, req pluginapi.ExecutorRequest, hostCallbackID, pluginStreamID string) (runErr error) {
 	body, err := executorPayloadBody(req)
 	if err != nil {
 		return err
@@ -65,12 +65,23 @@ func runFoldedExecution(ctx context.Context, req pluginapi.ExecutorRequest, host
 		return forwardHostStream(ctx, req, hostCallbackID, pluginStreamID)
 	}
 
+	tracker := processStats.begin(req.Model)
+	totalUsage := usageTotals{}
+	completed := false
+	outcomeReason := ""
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			tracker.finish(totalUsage, false, "panic", fmt.Errorf("folded execution panic"))
+			panic(recovered)
+		}
+		tracker.finish(totalUsage, completed, outcomeReason, runErr)
+	}()
+
 	cfg := loadedConfig()
 	origInput := cloneValue(baseBody["input"])
 	replayTail := make([]any, 0, 8)
 	finalOutput := make([]any, 0, 8)
 	roundSummaries := make([]map[string]any, 0, cfg.MaxContinue+1)
-	totalUsage := usageTotals{}
 	var firstUsage *roundUsage
 	seq := 0
 	dsOI := 0
@@ -82,6 +93,7 @@ func runFoldedExecution(ctx context.Context, req pluginapi.ExecutorRequest, host
 		resp, err := openHostModelStream(req, hostCallbackID, currentBody, true)
 		if err != nil {
 			if roundNo > 1 {
+				outcomeReason = "upstream_error"
 				return emitUpstreamIncomplete(pluginStreamID, baseResponse, finalOutput, firstUsage, totalUsage, seq, roundSummaries)
 			}
 			return err
@@ -89,12 +101,14 @@ func runFoldedExecution(ctx context.Context, req pluginapi.ExecutorRequest, host
 		if resp.StatusCode >= 400 {
 			_ = closeHostModelStream(resp.StreamID)
 			if roundNo > 1 {
+				outcomeReason = "upstream_error"
 				return emitUpstreamIncomplete(pluginStreamID, baseResponse, finalOutput, firstUsage, totalUsage, seq, roundSummaries)
 			}
 			return fmt.Errorf("host model status %d", resp.StatusCode)
 		}
 		if strings.TrimSpace(resp.StreamID) == "" {
 			if roundNo > 1 {
+				outcomeReason = "upstream_error"
 				return emitUpstreamIncomplete(pluginStreamID, baseResponse, finalOutput, firstUsage, totalUsage, seq, roundSummaries)
 			}
 			return fmt.Errorf("host model stream: empty stream_id")
@@ -131,6 +145,7 @@ func runFoldedExecution(ctx context.Context, req pluginapi.ExecutorRequest, host
 		logDegradedReasoningDecision(hostCallbackID, req.Model, roundNo, state, cfg, totalUsage, hasEncrypted, withinCap, canContinue)
 
 		if canContinue {
+			tracker.recordContinuation()
 			for _, item := range state.reasoning {
 				replayTail = append(replayTail, cloneMap(item))
 			}
@@ -156,6 +171,7 @@ func runFoldedExecution(ctx context.Context, req pluginapi.ExecutorRequest, host
 		billedUsage = usageMapFromTotals(totalUsage)
 		agentUsageView := agentUsage(firstUsage, totalUsage, state.usage, false)
 		if !state.sawTerminal {
+			outcomeReason = "upstream_eof"
 			event := syntheticIncomplete(
 				baseResponse,
 				finalOutput,
@@ -188,6 +204,7 @@ func runFoldedExecution(ctx context.Context, req pluginapi.ExecutorRequest, host
 		}
 
 		finalAgentUsageView := agentUsage(firstUsage, totalUsage, state.usage, true)
+		finalStopReason := stopReason(state, cfg, hasEncrypted, withinCap, roundNo)
 		terminal := reconstructTerminal(
 			state.terminal,
 			baseResponse,
@@ -195,7 +212,7 @@ func runFoldedExecution(ctx context.Context, req pluginapi.ExecutorRequest, host
 			finalAgentUsageView,
 			seq,
 			roundSummaries,
-			stopReason(state, cfg, hasEncrypted, withinCap, roundNo),
+			finalStopReason,
 			billedUsage,
 			finalAgentUsageView,
 		)
@@ -211,6 +228,7 @@ func runFoldedExecution(ctx context.Context, req pluginapi.ExecutorRequest, host
 				return err
 			}
 		}
+		completed, outcomeReason = terminalStatsOutcome(state.terminal, finalStopReason)
 		return nil
 	}
 }
@@ -767,6 +785,17 @@ func agentUsage(first *roundUsage, total usageTotals, final roundUsage, flushedF
 		out["input_tokens_details"] = map[string]any{"cached_tokens": *first.CachedTokens}
 	}
 	return out
+}
+
+func terminalStatsOutcome(terminal map[string]any, stopReason string) (bool, string) {
+	switch toString(terminal["type"]) {
+	case "response.failed":
+		return false, "upstream_failed"
+	case "response.incomplete":
+		return false, "upstream_incomplete"
+	default:
+		return true, stopReason
+	}
 }
 
 func stopReason(state roundState, cfg pluginConfig, hasEncrypted, withinCap bool, roundNo int) string {

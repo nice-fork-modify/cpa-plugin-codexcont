@@ -93,6 +93,7 @@ type registrationCapability struct {
 	ExecutorModelScope    pluginapi.ExecutorModelScope `json:"executor_model_scope"`
 	ExecutorInputFormats  []string                     `json:"executor_input_formats,omitempty"`
 	ExecutorOutputFormats []string                     `json:"executor_output_formats,omitempty"`
+	ManagementAPI         bool                         `json:"management_api"`
 }
 
 type identifierResponse struct {
@@ -180,6 +181,10 @@ func handleMethod(method string, request []byte) ([]byte, error) {
 			StatusCode: http.StatusNotImplemented,
 			Body:       []byte(`{"error":"http bridge is not implemented by codexcont"}`),
 		})
+	case pluginabi.MethodManagementRegister:
+		return okEnvelope(managementRegistration())
+	case pluginabi.MethodManagementHandle:
+		return handleManagement(request)
 	default:
 		return errorEnvelope("unknown_method", "unknown method: "+method), nil
 	}
@@ -194,19 +199,16 @@ func pluginRegistration() registration {
 			Author:           pluginAuthor,
 			GitHubRepository: pluginRepo,
 			ConfigFields: []pluginapi.ConfigField{
-				{Name: "source_formats", Type: pluginapi.ConfigFieldTypeArray, Description: "Accepted client protocols, for example responses or codex."},
-				{Name: "exit_protocol", Type: pluginapi.ConfigFieldTypeString, Description: "Target response protocol passed to host.model callbacks. Only responses is supported; invalid values fall back to responses."},
-				{Name: "model_patterns", Type: pluginapi.ConfigFieldTypeArray, Description: "Glob patterns that opt models into folding."},
-				{Name: "truncation_step", Type: pluginapi.ConfigFieldTypeInteger, Description: "Reasoning truncation step used by the 518*n-2 detector."},
-				{Name: "max_continue", Type: pluginapi.ConfigFieldTypeInteger, Description: "Maximum number of continuation rounds."},
-				{Name: "min_n", Type: pluginapi.ConfigFieldTypeInteger, Description: "Minimum truncation tier n that may continue."},
-				{Name: "max_n", Type: pluginapi.ConfigFieldTypeInteger, Description: "Maximum truncation tier n that may continue. Zero disables the cap."},
-				{Name: "marker_text", Type: pluginapi.ConfigFieldTypeString, Description: "Hidden commentary message appended before continuation rounds."},
-				{Name: "forward_marker", Type: pluginapi.ConfigFieldTypeBoolean, Description: "Emit the commentary marker downstream so the client records it."},
-				{Name: "force_include_encrypted", Type: pluginapi.ConfigFieldTypeBoolean, Description: "Ensure reasoning.encrypted_content is requested upstream."},
-				{Name: "rechunk_final_answer", Type: pluginapi.ConfigFieldTypeBoolean, Description: "Rechunk the final answer text into fixed-size deltas."},
-				{Name: "rechunk_size", Type: pluginapi.ConfigFieldTypeInteger, Description: "Chunk size used when rechunk_final_answer is enabled."},
-				{Name: "max_total_output_tokens", Type: pluginapi.ConfigFieldTypeInteger, Description: "Stop continuing once summed billed output tokens reach this cap. Zero disables it."},
+				{
+					Name:        "model_patterns",
+					Type:        pluginapi.ConfigFieldTypeString,
+					Description: "生效模型，多个模型使用英文逗号分隔，按模型名前缀匹配。留空时默认使用 gpt-5.5。状态页面：/v0/resource/plugins/codexcont/status",
+				},
+				{
+					Name:        "max_continue",
+					Type:        pluginapi.ConfigFieldTypeInteger,
+					Description: "单个请求允许追加的最大续写轮数。默认值：3；总上游调用轮数最多为 1 加该值。",
+				},
 			},
 		},
 		Capabilities: registrationCapability{
@@ -215,6 +217,7 @@ func pluginRegistration() registration {
 			ExecutorModelScope:    pluginapi.ExecutorModelScopeStatic,
 			ExecutorInputFormats:  []string{"responses"},
 			ExecutorOutputFormats: []string{"responses"},
+			ManagementAPI:         true,
 		},
 	}
 }

@@ -11,11 +11,20 @@ import (
 
 const (
 	pluginIdentifier = "codexcont"
-	pluginVersion    = "0.1.3"
+	pluginVersion    = "0.1.4"
 	pluginAuthor     = "nice-fork-modify"
 	pluginRepo       = "https://github.com/nice-fork-modify/cpa-plugin-codexcont"
 	defaultStep      = 518
 )
+
+var recommendedModels = []string{
+	"gpt-5.3",
+	"gpt-5.4",
+	"gpt-5.5",
+	"gpt-5.6-sol",
+	"gpt-5.6-terra",
+	"gpt-5.6-luna",
+}
 
 type pluginConfig struct {
 	HostEnabled           *bool    `yaml:"enabled"`
@@ -60,7 +69,7 @@ func defaultPluginConfig() pluginConfig {
 	return pluginConfig{
 		SourceFormats:         []string{"responses", "codex"},
 		ExitProtocol:          "responses",
-		ModelPatterns:         []string{"gpt-5.5"},
+		ModelPatterns:         []string{"gpt-5.5*"},
 		TruncationStep:        defaultStep,
 		MaxContinue:           3,
 		MinN:                  1,
@@ -79,7 +88,12 @@ func decodeConfig(raw []byte) (pluginConfig, error) {
 	if len(strings.TrimSpace(string(raw))) == 0 {
 		return cfg, nil
 	}
-	if err := yaml.Unmarshal(raw, &cfg); err != nil {
+	var document yaml.Node
+	if err := yaml.Unmarshal(raw, &document); err != nil {
+		return pluginConfig{}, err
+	}
+	normalizeCommaSeparatedListNode(&document, "model_patterns")
+	if err := document.Decode(&cfg); err != nil {
 		return pluginConfig{}, err
 	}
 	cfg.ExitProtocol = normalizeExitProtocol(cfg.ExitProtocol)
@@ -189,10 +203,49 @@ func containsFormat(items []string, candidate string) bool {
 	return false
 }
 
+func normalizeCommaSeparatedListNode(document *yaml.Node, key string) {
+	if document == nil || len(document.Content) == 0 {
+		return
+	}
+	mapping := document
+	if document.Kind == yaml.DocumentNode {
+		mapping = document.Content[0]
+	}
+	if mapping.Kind != yaml.MappingNode {
+		return
+	}
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value != key {
+			continue
+		}
+		value := mapping.Content[i+1]
+		if value.Kind != yaml.ScalarNode {
+			return
+		}
+		items := strings.Split(value.Value, ",")
+		value.Kind = yaml.SequenceNode
+		value.Tag = "!!seq"
+		value.Value = ""
+		value.Content = nil
+		for _, item := range items {
+			item = strings.TrimSpace(item)
+			if item == "" {
+				continue
+			}
+			value.Content = append(value.Content, &yaml.Node{
+				Kind:  yaml.ScalarNode,
+				Tag:   "!!str",
+				Value: item,
+			})
+		}
+		return
+	}
+}
+
 func normalizePatterns(items []string) []string {
 	out := make([]string, 0, len(items))
 	for _, item := range items {
-		item = strings.TrimSpace(item)
+		item = prefixGlob(item)
 		if item != "" {
 			out = append(out, item)
 		}
@@ -205,10 +258,18 @@ func matchesAnyPattern(value string, patterns []string) bool {
 		return false
 	}
 	for _, pattern := range patterns {
-		ok, err := path.Match(pattern, value)
+		ok, err := path.Match(prefixGlob(pattern), value)
 		if err == nil && ok {
 			return true
 		}
 	}
 	return false
+}
+
+func prefixGlob(pattern string) string {
+	pattern = strings.TrimSpace(pattern)
+	if pattern == "" || strings.HasSuffix(pattern, "*") {
+		return pattern
+	}
+	return pattern + "*"
 }

@@ -34,7 +34,7 @@ rechunk_size: 0
 	}
 }
 
-func TestPluginRegistrationDeclaresPluginOwnedFieldsOnly(t *testing.T) {
+func TestPluginRegistrationExposesCommonFieldsOnly(t *testing.T) {
 	reg := pluginRegistration()
 	if got := reg.Capabilities.ExecutorInputFormats; len(got) != 1 || got[0] != "responses" {
 		t.Fatalf("executor_input_formats = %#v, want [responses]", got)
@@ -42,11 +42,20 @@ func TestPluginRegistrationDeclaresPluginOwnedFieldsOnly(t *testing.T) {
 	if got := reg.Capabilities.ExecutorOutputFormats; len(got) != 1 || got[0] != "responses" {
 		t.Fatalf("executor_output_formats = %#v, want [responses]", got)
 	}
-	for _, field := range reg.Metadata.ConfigFields {
-		switch field.Name {
-		case "enabled", "priority", "entry_protocol":
-			t.Fatalf("unexpected host-owned or unsupported config field %q", field.Name)
-		}
+	fields := reg.Metadata.ConfigFields
+	if len(fields) != 2 {
+		t.Fatalf("config_fields = %#v, want model_patterns and max_continue", fields)
+	}
+	modelField := fields[0]
+	if modelField.Name != "model_patterns" || modelField.Type != pluginapi.ConfigFieldTypeString {
+		t.Fatalf("model config field = %#v", modelField)
+	}
+	if !strings.Contains(modelField.Description, "/v0/resource/plugins/codexcont/status") {
+		t.Fatalf("description missing status path: %q", modelField.Description)
+	}
+	continueField := fields[1]
+	if continueField.Name != "max_continue" || continueField.Type != pluginapi.ConfigFieldTypeInteger {
+		t.Fatalf("continuation config field = %#v", continueField)
 	}
 }
 
@@ -246,6 +255,25 @@ func TestDegradedReasoningLogMessageForStop(t *testing.T) {
 	}
 }
 
+func TestTerminalStatsOutcomeClassifiesUpstreamTerminal(t *testing.T) {
+	tests := []struct {
+		eventType string
+		stop      string
+		completed bool
+		reason    string
+	}{
+		{eventType: "response.completed", stop: "max_continue", completed: true, reason: "max_continue"},
+		{eventType: "response.failed", completed: false, reason: "upstream_failed"},
+		{eventType: "response.incomplete", completed: false, reason: "upstream_incomplete"},
+	}
+	for _, tc := range tests {
+		completed, reason := terminalStatsOutcome(map[string]any{"type": tc.eventType}, tc.stop)
+		if completed != tc.completed || reason != tc.reason {
+			t.Fatalf("terminalStatsOutcome(%q) = (%v, %q), want (%v, %q)", tc.eventType, completed, reason, tc.completed, tc.reason)
+		}
+	}
+}
+
 func TestShouldContinueMatches518Fingerprint(t *testing.T) {
 	cfg := defaultPluginConfig()
 	if !shouldContinue(516, cfg) {
@@ -408,7 +436,7 @@ func TestAgentUsageMatchesSingleResponseView(t *testing.T) {
 	}
 }
 
-func TestShouldRouteDefaultsToOnlyGPT55(t *testing.T) {
+func TestShouldRouteDefaultsToGPT55Prefix(t *testing.T) {
 	currentConfig.Store(defaultPluginConfig())
 
 	body := []byte(`{"input":[],"stream":true}`)
@@ -418,7 +446,8 @@ func TestShouldRouteDefaultsToOnlyGPT55(t *testing.T) {
 	}{
 		{model: "gpt-5.5", want: true},
 		{model: "gpt-5", want: false},
-		{model: "gpt-5.5-mini", want: false},
+		{model: "gpt-5.5-mini", want: true},
+		{model: "gpt-5.4", want: false},
 		{model: "codex-mini-latest", want: false},
 	}
 
