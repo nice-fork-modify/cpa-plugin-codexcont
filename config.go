@@ -11,9 +11,9 @@ import (
 
 const (
 	pluginIdentifier = "codexcont"
-	pluginVersion    = "0.1.2"
-	pluginAuthor     = "cwzsquare"
-	pluginRepo       = "https://github.com/cwzsquare/cpa-plugin-codexcont"
+	pluginVersion    = "0.1.3"
+	pluginAuthor     = "nice-fork-modify"
+	pluginRepo       = "https://github.com/nice-fork-modify/cpa-plugin-codexcont"
 	defaultStep      = 518
 )
 

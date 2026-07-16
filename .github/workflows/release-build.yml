@@ -35,22 +35,16 @@ jobs:
             goarch: amd64
             extension: so
             artifact_suffix: linux-amd64
-            packages: ""
-            cc: gcc
-          - runner: ubuntu-latest
+          - runner: ubuntu-24.04-arm
             goos: linux
             goarch: arm64
             extension: so
             artifact_suffix: linux-arm64
-            packages: "gcc-aarch64-linux-gnu libc6-dev-arm64-cross"
-            cc: aarch64-linux-gnu-gcc
           - runner: macos-14
             goos: darwin
             goarch: arm64
             extension: dylib
             artifact_suffix: darwin-arm64
-            packages: ""
-            cc: ""
 
     steps:
       - name: Check out repository
@@ -61,26 +55,25 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install cross-compilation toolchain
-        if: matrix.packages != ''
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ${{ matrix.packages }}
-
       - name: Build shared library
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          CC: ${{ matrix.cc }}
         run: |
           set -eu
           out_dir="release/plugins/${GOOS}/${GOARCH}"
           mkdir -p "${out_dir}"
-          if [ -n "${CC}" ]; then
-            export CC
+          if [ "${GOOS}" = "linux" ]; then
+            docker run --rm \
+              -e GOOS \
+              -e GOARCH \
+              -v "${GITHUB_WORKSPACE}:/src" \
+              -w /src \
+              golang:1.26-bookworm \
+              bash -lc 'apt-get update >/dev/null && apt-get install -y --no-install-recommends build-essential >/dev/null && CGO_ENABLED=1 /usr/local/go/bin/go build -buildvcs=false -buildmode=c-shared -o "release/plugins/${GOOS}/${GOARCH}/codexcont.so" .'
+          else
+            CGO_ENABLED=1 go build -buildmode=c-shared -o "${out_dir}/codexcont.${{ matrix.extension }}" .
           fi
-          export CGO_ENABLED=1
-          go build -buildmode=c-shared -o "${out_dir}/codexcont.${{ matrix.extension }}" .
           rm -f "${out_dir}/codexcont.h"
 
       - name: Package plugin store asset

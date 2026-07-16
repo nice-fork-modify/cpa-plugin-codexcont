@@ -45,7 +45,7 @@ case "$runtime" in
       --mount "type=bind,source=$root_dir,target=/src" \
       -w /src \
       golang:1.26-bookworm \
-      bash -lc "mkdir -p /src/dist/linux/$arch && GOCACHE=/tmp/gocache /usr/local/go/bin/go build -buildmode=c-shared -o /src/dist/linux/$arch/codexcont.so . && rm -f /src/dist/linux/$arch/codexcont.h"
+      bash -lc "apt-get update >/dev/null && apt-get install -y --no-install-recommends build-essential >/dev/null && mkdir -p /src/dist/linux/$arch && GOCACHE=/tmp/gocache /usr/local/go/bin/go build -buildvcs=false -buildmode=c-shared -o /src/dist/linux/$arch/codexcont.so . && rm -f /src/dist/linux/$arch/codexcont.h"
     ;;
   docker|podman)
     "$runtime" run --rm \
@@ -53,7 +53,7 @@ case "$runtime" in
       -v "$root_dir:/src" \
       -w /src \
       golang:1.26-bookworm \
-      bash -lc "mkdir -p /src/dist/linux/$arch && GOCACHE=/tmp/gocache go build -buildmode=c-shared -o /src/dist/linux/$arch/codexcont.so . && rm -f /src/dist/linux/$arch/codexcont.h"
+      bash -lc "apt-get update >/dev/null && apt-get install -y --no-install-recommends build-essential >/dev/null && mkdir -p /src/dist/linux/$arch && GOCACHE=/tmp/gocache /usr/local/go/bin/go build -buildvcs=false -buildmode=c-shared -o /src/dist/linux/$arch/codexcont.so . && rm -f /src/dist/linux/$arch/codexcont.h"
     ;;
   *)
     echo "unsupported container runtime: $runtime" >&2

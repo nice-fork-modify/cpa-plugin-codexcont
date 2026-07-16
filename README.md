@@ -21,6 +21,8 @@ This project is aligned to the current official standard dynamic library plugin 
 - tolerates line-chunked SSE frames from host stream callbacks
 - constrains `exit_protocol` to `responses` so unsupported protocols do not silently misroute
 
+Linux release assets are built with `golang:1.26-bookworm` and target the same glibc environment as CLIProxyAPI's official plugin-enabled Linux build. Musl/Alpine hosts are not supported because CLIProxyAPI's portable musl build disables dynamic library plugins.
+
 Supported request sources:
 
 - `responses`
